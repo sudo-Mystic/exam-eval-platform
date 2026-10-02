@@ -23,10 +23,9 @@ import {
 } from "../lib/gemini/prompts";
 import { getOrCreateDraftVersion } from "../lib/rubric";
 import type { JobPayloadMap } from "../lib/queue";
-import { QuestionType } from "@prisma/client";
+import type { QuestionType } from "@prisma/client";
 
 const provider = new GeminiProvider();
-const QTYPES = new Set(Object.values(QuestionType));
 const PAGE_BATCH = 10;
 
 export class BudgetExhausted extends Error {
@@ -130,7 +129,7 @@ async function generateWithRepair(args: {
 }): Promise<{ parsed: unknown }> {
   await ensureBudget(args.examId);
   let attempt = 0;
-  let user = args.user;
+  const user = args.user;
   let lastError = "";
   while (attempt < 2) {
     const res = await provider.callModel(args.model, {

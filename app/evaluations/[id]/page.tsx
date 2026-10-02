@@ -234,6 +234,7 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
             <div className="max-h-[75vh] space-y-4 overflow-y-auto rounded-[var(--radius-md)] border border-border bg-surface p-3">
               {data.evaluation.pages.map((p) => (
                 <figure key={p.id}>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- dynamic /api image */}
                   <img
                     src={`/api/pages/${p.id}`}
                     alt={`Answer page ${p.pageNo}`}

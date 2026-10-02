@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { storage, paths } from "@/lib/storage";
-import { enqueue } from "@/lib/queue";
 import { prismaError, conflict, notFound } from "@/lib/api-errors";
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB per file

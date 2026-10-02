@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getActiveRubricVersion } from "@/lib/rubric";
 import { enqueue } from "@/lib/queue";
-import { prismaError, notFound, conflict } from "@/lib/api-errors";
+import { prismaError, notFound } from "@/lib/api-errors";
 
 // POST /api/sheets/:id/evaluate - start (or resume) AI evaluation.
 // Requires an APPROVED rubric. Idempotent: returns the existing evaluation

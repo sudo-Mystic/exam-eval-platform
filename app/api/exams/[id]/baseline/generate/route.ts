@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getOrCreateDraftVersion } from "@/lib/rubric";
 import { enqueue } from "@/lib/queue";
-import { prismaError, notFound, conflict } from "@/lib/api-errors";
+import { prismaError, notFound } from "@/lib/api-errors";
 
 // POST /api/exams/:id/baseline/generate
 // Idempotent: if a DRAFT version already has baselines (or a generate job is

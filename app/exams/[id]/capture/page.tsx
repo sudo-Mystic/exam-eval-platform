@@ -348,6 +348,7 @@ export default function CapturePage({ params }: { params: Promise<{ id: string }
                   {pages.map((p) => (
                     <li key={p.id} className="rounded-[var(--radius-md)] border border-border bg-surface p-2">
                       <div className="relative">
+                        {/* eslint-disable-next-line @next/next/no-img-element -- dynamic /api image */}
                         <img
                           src={`/api/pages/${p.id}?thumb=1`}
                           alt={`Page ${p.pageNo}`}

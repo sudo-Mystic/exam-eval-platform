@@ -16,7 +16,6 @@ export function WorkflowStepper({
   examId: string;
   status: string;
 }) {
-  const order = ["DRAFT", "PREPARED", "READY", "CAPTURING", "GRADING", "REVIEW", "PUBLISHED"];
   const stepFor = (s: string) => {
     if (s === "DRAFT") return 0;
     if (s === "PREPARED") return 2; // paper uploaded, questions extracting/editable
