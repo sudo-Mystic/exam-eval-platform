@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: exam
+      POSTGRES_PASSWORD: exam
+      POSTGRES_DB: exam_eval
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # Uncomment to run the app itself in Docker:
+  # app:
+  #   build: .
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     DATABASE_URL: postgresql://exam:exam@db:5432/exam_eval
+  #   env_file:
+  #     - .env
+  #   depends_on:
+  #     - db
+  #   volumes:
+  #     - ./storage:/app/storage
+
+volumes:
+  pgdata:

@@ -1,26 +1,91 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens for the exam-eval faculty workspace.
+ * Dense ops tool: zinc neutrals, ONE locked accent (deep blue), status colors
+ * reserved for grading states only. No gradients, no decorative animation.
+ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fafafa;
+  --foreground: #18181b;
+  --surface: #ffffff;
+  --surface-muted: #f4f4f5;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+
+  --accent: #1d4ed8;
+  --accent-hover: #1e40af;
+  --accent-soft: #eff6ff;
+
+  /* grading states only */
+  --status-review: #b45309;
+  --status-review-bg: #fef3c7;
+  --status-bad: #b91c1c;
+  --status-bad-bg: #fee2e2;
+  --status-good: #15803d;
+  --status-good-bg: #dcfce7;
+  --status-info: #1d4ed8;
+  --status-info-bg: #eff6ff;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-review: var(--status-review);
+  --color-review-bg: var(--status-review-bg);
+  --color-bad: var(--status-bad);
+  --color-bad-bg: var(--status-bad-bg);
+  --color-good: var(--status-good);
+  --color-good-bg: var(--status-good-bg);
+  --color-info: var(--status-info);
+  --color-info-bg: var(--status-info-bg);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #09090b;
+    --foreground: #f4f4f5;
+    --surface: #101013;
+    --surface-muted: #18181b;
+    --border: #27272a;
+    --border-strong: #3f3f46;
+    --accent: #60a5fa;
+    --accent-hover: #93c5fd;
+    --accent-soft: #172554;
+    --status-review-bg: #451a03;
+    --status-bad-bg: #450a0a;
+    --status-good-bg: #052e16;
+    --status-info-bg: #172554;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/* tabular numbers for every mark in the app */
+.mark,
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+/* visible focus for keyboard navigation in the grading workspace */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
