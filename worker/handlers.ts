@@ -3,10 +3,11 @@ import { storage } from "../lib/storage";
 import {
   rasterizePdf,
   normalizePageImage,
+  makeThumbnail,
   storePaperPage,
 } from "../lib/ingestion/pdf";
 import { GeminiProvider, isRetryable } from "../lib/gemini/provider";
-import { modelFor, logUsage, withinBudget } from "../lib/gemini/adapter";
+import { modelFor, logUsage, withinBudget, isHardQuestion } from "../lib/gemini/adapter";
 import {
   EXTRACTION_SYSTEM,
   extractionUser,
@@ -14,6 +15,10 @@ import {
   schemeUser,
   BASELINE_SYSTEM,
   baselineUser,
+  MATCH_SYSTEM,
+  matchUser,
+  GRADE_SYSTEM,
+  gradeUser,
   repairUser,
 } from "../lib/gemini/prompts";
 import { getOrCreateDraftVersion } from "../lib/rubric";
@@ -478,7 +483,331 @@ export async function dispatch(job: { type: string; payload: unknown }) {
       return handleSchemeParse(p as JobPayloadMap["scheme-parse"]);
     case "generate-baseline":
       return handleGenerateBaseline(p as JobPayloadMap["generate-baseline"]);
+    case "question-match":
+      return handleQuestionMatch(p as JobPayloadMap["question-match"]);
+    case "grade-question":
+      return handleGradeQuestion(p as JobPayloadMap["grade-question"]);
     default:
       throw new Error(`Unknown job type: ${job.type}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: question matching and grading
+// ---------------------------------------------------------------------------
+
+export interface MatchMapping {
+  questionId: string;
+  pageNos: number[];
+  regions: string[];
+  confidence: "high" | "med" | "low";
+  flags: string[];
+}
+
+export function validateMatch(raw: unknown, knownIds: Set<string>): MatchMapping[] {
+  if (typeof raw !== "object" || raw === null) throw new Error("Match: not an object");
+  const mappings = (raw as { mappings?: unknown }).mappings;
+  if (!Array.isArray(mappings)) throw new Error("Match: mappings is not an array");
+  return mappings.map((m, i) => {
+    const where = `mappings[${i}]`;
+    if (typeof m !== "object" || m === null) throw new Error(`${where}: not an object`);
+    const o = m as Record<string, unknown>;
+    if (typeof o.questionId !== "string" || !knownIds.has(o.questionId))
+      throw new Error(`${where}.questionId is not a known question`);
+    if (!Array.isArray(o.pageNos) || o.pageNos.some((n) => !Number.isInteger(n) || n < 1))
+      throw new Error(`${where}.pageNos invalid`);
+    if (!Array.isArray(o.regions) || o.regions.some((r) => typeof r !== "string"))
+      throw new Error(`${where}.regions invalid`);
+    const confidence = String(o.confidence ?? "med");
+    if (!["high", "med", "low"].includes(confidence))
+      throw new Error(`${where}.confidence invalid`);
+    return {
+      questionId: o.questionId,
+      pageNos: o.pageNos as number[],
+      regions: o.regions as string[],
+      confidence: confidence as MatchMapping["confidence"],
+      flags: Array.isArray(o.flags) ? (o.flags as unknown[]).filter((f): f is string => typeof f === "string") : [],
+    };
+  });
+}
+
+export async function handleQuestionMatch(payload: JobPayloadMap["question-match"]) {
+  const { examId, sheetId, evaluationId } = payload;
+  const sheet = await db.answerSheet.findUnique({
+    where: { id: sheetId },
+    include: { pages: { orderBy: { pageNo: "asc" } } },
+  });
+  if (!sheet) throw new Error(`Sheet ${sheetId} no longer exists; skipping match`);
+  if (sheet.pages.length === 0) throw new Error("Sheet has no pages to match");
+
+  const evaluation = await db.evaluation.findUnique({ where: { id: evaluationId } });
+  if (!evaluation) throw new Error(`Evaluation ${evaluationId} gone; skipping match`);
+
+  const questions = await db.question.findMany({
+    where: { examId },
+    orderBy: { sortOrder: "asc" },
+  });
+  if (questions.length === 0) throw new Error("Exam has no questions");
+
+  await ensureBudget(examId);
+  const model = modelFor("match");
+  const compact = questions
+    .map((q) => `${q.id} | ${q.qNo} | ${q.text.slice(0, 200)}`)
+    .join("\n");
+
+  const images: Array<{ mimeType: string; data: Buffer }> = [];
+  const pageByNo = new Map<number, string>();
+  for (const p of sheet.pages) {
+    const data = await storage.read(p.imagePath);
+    const thumb = await makeThumbnail(data);
+    images.push({ mimeType: "image/jpeg", data: thumb });
+    pageByNo.set(p.pageNo, p.id);
+  }
+
+  const knownIds = new Set(questions.map((q) => q.id));
+  let mappings: MatchMapping[];
+  {
+    const { parsed } = await generateWithRepair({
+      examId,
+      purpose: "question-match",
+      model,
+      system: MATCH_SYSTEM,
+      user: matchUser(compact),
+      images,
+      maxOutputTokens: 4000,
+      temperature: 0.2,
+      validate: (raw) => validateMatch(raw, knownIds),
+    });
+    mappings = validateMatch(parsed, knownIds);
+  }
+
+  // Persist mappings; then enqueue one grade job per mapped question.
+  // Questions with no mapped answer get a zero-mark evaluation flagged
+  // no-answer-found so faculty sees them explicitly.
+  const { enqueue: enqueueJob } = await import("../lib/queue");
+  await db.$transaction(async (tx) => {
+    for (const m of mappings) {
+      const pageIds = m.pageNos
+        .map((n) => pageByNo.get(n))
+        .filter((id): id is string => !!id);
+      await tx.extractedAnswer.upsert({
+        where: { sheetId_questionId: { sheetId, questionId: m.questionId } },
+        create: {
+          sheetId,
+          questionId: m.questionId,
+          pageIds,
+          regionRefs: m.regions,
+          interpretationFlags:
+            m.confidence === "low" ? [...m.flags, "low-confidence"] : m.flags,
+        },
+        update: {
+          pageIds,
+          regionRefs: m.regions,
+          interpretationFlags:
+            m.confidence === "low" ? [...m.flags, "low-confidence"] : m.flags,
+        },
+      });
+    }
+  });
+
+  const mappedIds = new Set(mappings.map((m) => m.questionId));
+  for (const q of questions) {
+    if (!mappedIds.has(q.id)) {
+      await db.questionEvaluation.upsert({
+        where: { evaluationId_questionId: { evaluationId, questionId: q.id } },
+        create: {
+          evaluationId,
+          questionId: q.id,
+          aiMarks: 0,
+          aiJustification: "No answer found on the answer sheet for this question.",
+          criterionMarks: [],
+          evidenceRefs: [],
+          confidence: "LOW",
+          flags: ["no-answer-found"],
+          model,
+        },
+        update: {},
+      });
+    } else {
+      await enqueueJob("grade-question", {
+        examId,
+        sheetId,
+        evaluationId,
+        questionId: q.id,
+      });
+    }
+  }
+
+  await db.answerSheet.update({ where: { id: sheetId }, data: { status: "GRADING" } });
+}
+
+export interface GradeOutput {
+  interpretedSummary: string;
+  criterionMarks: Array<{ criterionId: string; marks: number; note: string }>;
+  total: number;
+  justification: string;
+  evidenceRefs: string[];
+  confidence: "high" | "med" | "low";
+  flags: string[];
+}
+
+export function validateGradeOutput(raw: unknown): GradeOutput {
+  if (typeof raw !== "object" || raw === null) throw new Error("Grade: not an object");
+  const o = raw as Record<string, unknown>;
+  for (const f of ["interpretedSummary", "justification"] as const) {
+    if (typeof o[f] !== "string" || (o[f] as string).trim().length === 0)
+      throw new Error(`Grade: ${f} missing`);
+  }
+  if (!Array.isArray(o.criterionMarks))
+    throw new Error("Grade: criterionMarks is not an array");
+  const criterionMarks = (o.criterionMarks as unknown[]).map((c, i) => {
+    if (typeof c !== "object" || c === null) throw new Error(`Grade: criterionMarks[${i}] invalid`);
+    const cc = c as Record<string, unknown>;
+    if (typeof cc.criterionId !== "string") throw new Error(`Grade: criterionMarks[${i}].criterionId missing`);
+    if (typeof cc.marks !== "number" || !Number.isFinite(cc.marks) || cc.marks < 0)
+      throw new Error(`Grade: criterionMarks[${i}].marks invalid`);
+    return {
+      criterionId: cc.criterionId,
+      marks: cc.marks,
+      note: typeof cc.note === "string" ? cc.note : "",
+    };
+  });
+  if (typeof o.total !== "number" || !Number.isFinite(o.total) || o.total < 0)
+    throw new Error("Grade: total invalid");
+  if (!Array.isArray(o.evidenceRefs) || o.evidenceRefs.some((r) => typeof r !== "string"))
+    throw new Error("Grade: evidenceRefs invalid");
+  const confidence = String(o.confidence ?? "med");
+  if (!["high", "med", "low"].includes(confidence)) throw new Error("Grade: confidence invalid");
+  return {
+    interpretedSummary: (o.interpretedSummary as string).trim(),
+    criterionMarks,
+    total: o.total,
+    justification: (o.justification as string).trim(),
+    evidenceRefs: o.evidenceRefs as string[],
+    confidence: confidence as GradeOutput["confidence"],
+    flags: Array.isArray(o.flags)
+      ? (o.flags as unknown[]).filter((f): f is string => typeof f === "string")
+      : [],
+  };
+}
+
+export async function handleGradeQuestion(payload: JobPayloadMap["grade-question"]) {
+  const { examId, sheetId, evaluationId, questionId } = payload;
+
+  const evaluation = await db.evaluation.findUnique({ where: { id: evaluationId } });
+  if (!evaluation) throw new Error(`Evaluation ${evaluationId} gone; skipping grade`);
+
+  const [question, extracted] = await Promise.all([
+    db.question.findUnique({ where: { id: questionId } }),
+    db.extractedAnswer.findUnique({
+      where: { sheetId_questionId: { sheetId, questionId } },
+    }),
+  ]);
+  if (!question) throw new Error(`Question ${questionId} gone; skipping grade`);
+  if (!extracted) throw new Error(`No extracted answer for ${questionId}; skipping grade`);
+
+  const [criteria, baseline] = await Promise.all([
+    db.rubricCriterion.findMany({
+      where: { rubricVersionId: evaluation.rubricVersionId, questionId },
+      orderBy: { sortOrder: "asc" },
+    }),
+    db.baselineSolution.findUnique({
+      where: {
+        rubricVersionId_questionId: {
+          rubricVersionId: evaluation.rubricVersionId,
+          questionId,
+        },
+      },
+    }),
+  ]);
+  if (criteria.length === 0) throw new Error(`No criteria for question ${question.qNo}`);
+
+  await ensureBudget(examId);
+  const taskKind = isHardQuestion(question.qType) ? "grade-hard" : "mcq";
+  const model = modelFor(taskKind);
+
+  // Only the relevant pages for this question, never the whole sheet.
+  const pages = await db.sheetPage.findMany({
+    where: { id: { in: extracted.pageIds } },
+    orderBy: { pageNo: "asc" },
+  });
+  const images: Array<{ mimeType: string; data: Buffer }> = [];
+  for (const p of pages) {
+    images.push({ mimeType: "image/jpeg", data: await storage.read(p.imagePath) });
+  }
+  if (images.length === 0) throw new Error("Mapped pages have no images");
+
+  const criteriaList = criteria
+    .map((c) => `${c.id} | ${c.label} (${c.maxMarks} marks): ${c.descriptors}`)
+    .join("\n");
+
+  const { parsed } = await generateWithRepair({
+    examId,
+    purpose: "grade",
+    model,
+    system: GRADE_SYSTEM,
+    user: gradeUser(
+      question.qNo,
+      question.maxMarks,
+      question.text,
+      criteriaList,
+      baseline?.solutionText ?? "(no baseline solution)",
+      baseline && baseline.alternatives.length > 0
+        ? baseline.alternatives.join("\n")
+        : "(none listed)"
+    ),
+    images,
+    maxOutputTokens: 2000,
+    temperature: 0.2,
+    validate: (raw) => validateGradeOutput(raw),
+  });
+  const out = validateGradeOutput(parsed);
+
+  // Deterministic validation: trust nothing from the model.
+  const critById = new Map(criteria.map((c) => [c.id, c]));
+  for (const cm of out.criterionMarks) {
+    const c = critById.get(cm.criterionId);
+    if (!c) throw new Error(`Unknown criterion ${cm.criterionId} in model output`);
+    if (cm.marks - c.maxMarks > 0.001)
+      throw new Error(`Criterion ${c.label}: ${cm.marks} exceeds max ${c.maxMarks}`);
+  }
+  // Every criterion must be scored; missing ones fail the job for faculty review.
+  const scored = new Set(out.criterionMarks.map((cm) => cm.criterionId));
+  for (const c of criteria) {
+    if (!scored.has(c.id)) throw new Error(`Criterion ${c.label} was not scored`);
+  }
+  const sum = out.criterionMarks.reduce((s, cm) => s + cm.marks, 0);
+  if (Math.abs(sum - out.total) > 0.01)
+    throw new Error(`Total ${out.total} does not match criterion sum ${sum}`);
+  if (out.total - question.maxMarks > 0.001)
+    throw new Error(`Total ${out.total} exceeds question max ${question.maxMarks}`);
+
+  const flags = [...out.flags];
+  if (out.confidence === "low" && !flags.includes("low-confidence")) {
+    flags.push("low-confidence");
+  }
+
+  await db.questionEvaluation.upsert({
+    where: { evaluationId_questionId: { evaluationId, questionId } },
+    create: {
+      evaluationId,
+      questionId,
+      aiMarks: out.total,
+      aiJustification: `${out.interpretedSummary}\n\n${out.justification}`,
+      criterionMarks: out.criterionMarks,
+      evidenceRefs: out.evidenceRefs,
+      confidence: out.confidence.toUpperCase() as "HIGH" | "MED" | "LOW",
+      flags,
+      model,
+    },
+    update: {
+      aiMarks: out.total,
+      aiJustification: `${out.interpretedSummary}\n\n${out.justification}`,
+      criterionMarks: out.criterionMarks,
+      evidenceRefs: out.evidenceRefs,
+      confidence: out.confidence.toUpperCase() as "HIGH" | "MED" | "LOW",
+      flags,
+      model,
+    },
+  });
 }

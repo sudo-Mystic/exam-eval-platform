@@ -170,3 +170,89 @@ describe("validateBaseline", () => {
     ).toThrow(/criterionnotes/i);
   });
 });
+
+describe("validateMatch", () => {
+  const known = new Set(["q1", "q2"]);
+
+  it("accepts a valid mapping", async () => {
+    const { validateMatch } = await import("../worker/handlers");
+    const out = validateMatch(
+      {
+        mappings: [
+          {
+            questionId: "q1",
+            pageNos: [1, 2],
+            regions: ["1:10,20,80,60"],
+            confidence: "high",
+            flags: ["continued-across-pages"],
+          },
+        ],
+      },
+      known
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].questionId).toBe("q1");
+  });
+
+  it("rejects unknown questionId", async () => {
+    const { validateMatch } = await import("../worker/handlers");
+    expect(() =>
+      validateMatch(
+        { mappings: [{ questionId: "q9", pageNos: [1], regions: [], confidence: "high", flags: [] }] },
+        known
+      )
+    ).toThrow(/questionId/);
+  });
+
+  it("rejects bad confidence", async () => {
+    const { validateMatch } = await import("../worker/handlers");
+    expect(() =>
+      validateMatch(
+        { mappings: [{ questionId: "q1", pageNos: [1], regions: [], confidence: "maybe", flags: [] }] },
+        known
+      )
+    ).toThrow(/confidence/);
+  });
+});
+
+describe("validateGradeOutput", () => {
+  const good = {
+    interpretedSummary: "Student wrote the correct formula with a unit error.",
+    criterionMarks: [
+      { criterionId: "c1", marks: 2, note: "formula correct" },
+      { criterionId: "c2", marks: 0, note: "unit missing" },
+    ],
+    total: 2,
+    justification: "Formula present, unit absent.",
+    evidenceRefs: ["1:10,20,80,60"],
+    confidence: "med",
+    flags: [],
+  };
+
+  it("accepts a valid grade", async () => {
+    const { validateGradeOutput } = await import("../worker/handlers");
+    const out = validateGradeOutput(good);
+    expect(out.total).toBe(2);
+    expect(out.criterionMarks).toHaveLength(2);
+  });
+
+  it("rejects negative marks", async () => {
+    const { validateGradeOutput } = await import("../worker/handlers");
+    expect(() =>
+      validateGradeOutput({
+        ...good,
+        criterionMarks: [{ criterionId: "c1", marks: -1, note: "" }],
+      })
+    ).toThrow(/marks/);
+  });
+
+  it("rejects missing justification", async () => {
+    const { validateGradeOutput } = await import("../worker/handlers");
+    expect(() => validateGradeOutput({ ...good, justification: "" })).toThrow(/justification/);
+  });
+
+  it("rejects non-array evidenceRefs", async () => {
+    const { validateGradeOutput } = await import("../worker/handlers");
+    expect(() => validateGradeOutput({ ...good, evidenceRefs: "p1" })).toThrow(/evidenceRefs/);
+  });
+});

@@ -93,3 +93,79 @@ export function repairUser(validationError: string): string {
 Validation error: ${validationError}
 Return ONLY the corrected JSON object, no markdown fences, no commentary.`;
 }
+
+export const MATCH_SYSTEM = `You map handwritten exam answers to question numbers.
+Return ONLY the JSON object, no markdown fences, no commentary.
+Be conservative: flag uncertainty rather than guessing.`;
+
+export function matchUser(questionsCompact: string): string {
+  return `These answer-sheet pages belong to one student. Map each answer region to a question.
+
+Questions in this exam:
+${questionsCompact}
+(format: "questionId | qNo | first 200 chars", one per line)
+
+Rules:
+- Answers may continue across pages and appear out of order. Follow the
+  student's question-number labels in the handwriting.
+- pageNo is the 1-based page number as given. regions are normalized
+  "pageNo:x,y,w,h" boxes (0-100 scale) around each answer region.
+- confidence is high, med, or low. Use low when handwriting is unclear or
+  the question number label is missing.
+- flags may include: continued-across-pages, out-of-order, unreadable,
+  question-number-unclear, no-answer-found.
+- Every questionId must be one of the listed ids. Omit questions with no answer.
+
+Schema:
+{"type":"object","required":["mappings"],"properties":{"mappings":{"type":"array","items":{"type":"object","required":["questionId","pageNos","regions","confidence","flags"],"properties":{"questionId":{"type":"string"},"pageNos":{"type":"array","items":{"type":"integer"}},"regions":{"type":"array","items":{"type":"string"}},"confidence":{"type":"string","enum":["high","med","low"]},"flags":{"type":"array","items":{"type":"string"}}}}}}}}
+
+Return only the JSON object.`;
+}
+
+export const GRADE_SYSTEM = `You grade a handwritten exam answer against a rubric.
+Return ONLY the JSON object, no markdown fences, no commentary.
+Grade what the student actually wrote, not what you wish they wrote.
+Partial credit follows the criteria. When unsure, say so with flags.`;
+
+export function gradeUser(
+  qNo: string,
+  maxMarks: number,
+  questionText: string,
+  criteriaList: string,
+  solutionText: string,
+  alternatives: string
+): string {
+  return `Grade this student's answer to Question ${qNo} (${maxMarks} marks).
+
+Question: ${questionText}
+
+Grading criteria:
+${criteriaList}
+(format: "criterionId | label (maxMarks marks): descriptors", one per line)
+
+Reference solution:
+${solutionText}
+
+Acceptable alternatives:
+${alternatives}
+
+Rules:
+- interpretedSummary: concise plain-text reading of what the student wrote
+  (transcribe key content, do not paraphrase away errors).
+- criterionMarks: one entry per criterionId above, marks within [0, criterion max].
+- total must equal the sum of criterion marks and not exceed ${maxMarks}.
+- justification: brief, tied to specific things the student wrote.
+- evidenceRefs: "pageNo:x,y,w,h" boxes (0-100 scale) supporting the decision.
+  Empty array only if flagged unreadable.
+- confidence: high, med, or low. Model confidence is a review signal, not a
+  calibrated probability.
+- flags may include: unreadable, ambiguous, unsupported-conclusion,
+  partial-answer, blank-answer.
+- For code: separate logical correctness from syntax per the criteria.
+- For diagrams: never invent labels that are not visible.
+
+Schema:
+{"type":"object","required":["interpretedSummary","criterionMarks","total","justification","evidenceRefs","confidence","flags"],"properties":{"interpretedSummary":{"type":"string"},"criterionMarks":{"type":"array","items":{"type":"object","required":["criterionId","marks","note"],"properties":{"criterionId":{"type":"string"},"marks":{"type":"number"},"note":{"type":"string"}}}},"total":{"type":"number"},"justification":{"type":"string"},"evidenceRefs":{"type":"array","items":{"type":"string"}},"confidence":{"type":"string","enum":["high","med","low"]},"flags":{"type":"array","items":{"type":"string"}}}}}
+
+The answer images follow. Return only the JSON object.`;
+}
