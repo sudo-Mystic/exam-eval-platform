@@ -1,7 +1,12 @@
 import { db } from "@/lib/db";
 import { ExamCreator } from "./exam-creator";
+import type { Exam } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
+
+type ExamWithCounts = Exam & {
+  _count: { questions: number; answerSheets: number };
+};
 
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: "Draft",
@@ -45,7 +50,7 @@ export default async function Dashboard() {
           </div>
         ) : (
           <ul className="overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface">
-            {exams.map((exam) => (
+            {(exams as ExamWithCounts[]).map((exam) => (
               <li
                 key={exam.id}
                 className="flex items-center justify-between gap-4 border-b border-border px-5 py-4 last:border-0"
