@@ -30,8 +30,21 @@ export async function GET(
     });
     if (!evaluation) return notFound("Evaluation not found");
 
+    // Resolve criterion labels so review shows the rubric's real labels,
+    // not whatever the model wrote into the note field.
+    const criteria = await db.rubricCriterion.findMany({
+      where: { rubricVersionId: evaluation.rubricVersionId },
+      select: { id: true, label: true, maxMarks: true },
+    });
+    const criterionById = new Map(criteria.map((c) => [c.id, c]));
+
     const questions = evaluation.questionEvals.map((qe) => {
       const override = qe.overrides[0];
+      const criterionMarks = (qe.criterionMarks as Array<{ criterionId: string; marks: number; note: string }>).map((c) => ({
+        ...c,
+        label: criterionById.get(c.criterionId)?.label ?? null,
+        maxMarks: criterionById.get(c.criterionId)?.maxMarks ?? null,
+      }));
       return {
         id: qe.id,
         questionId: qe.questionId,
@@ -41,7 +54,7 @@ export async function GET(
         qType: qe.question.qType,
         aiMarks: qe.aiMarks,
         aiJustification: qe.aiJustification,
-        criterionMarks: qe.criterionMarks,
+        criterionMarks,
         evidenceRefs: qe.evidenceRefs,
         confidence: qe.confidence,
         flags: qe.flags,

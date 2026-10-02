@@ -316,11 +316,19 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
                 {active.criterionMarks.length > 0 && (
                   <div className="mt-4">
                     <h3 className="mb-1 text-xs font-medium text-foreground/60">Per-criterion</h3>
-                    <ul className="space-y-1 text-sm">
-                      {(active.criterionMarks as Array<{ criterionId: string; marks: number; note: string }>).map((c, i) => (
+                    <ul className="space-y-2 text-sm">
+                      {(active.criterionMarks as Array<{ criterionId: string; marks: number; note: string; label: string | null; maxMarks: number | null }>).map((c, i) => (
                         <li key={i} className="flex justify-between gap-3">
-                          <span className="text-foreground/70">{c.note || c.criterionId}</span>
-                          <span className="mark font-medium">{c.marks}</span>
+                          <span>
+                            <span className="text-foreground/80">{c.label ?? c.criterionId}</span>
+                            {c.note && c.note !== c.label && (
+                              <span className="block text-xs text-foreground/50">{c.note}</span>
+                            )}
+                          </span>
+                          <span className="mark shrink-0 font-medium">
+                            {c.marks}
+                            {c.maxMarks != null && <span className="text-foreground/50"> / {c.maxMarks}</span>}
+                          </span>
                         </li>
                       ))}
                     </ul>
