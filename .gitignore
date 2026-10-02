@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+.next/
+out/
+
+# prisma
+prisma/migrations/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# storage (local disk for answer sheet images)
+storage/uploads/
+storage/thumbs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
