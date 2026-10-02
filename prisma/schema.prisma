@@ -1,0 +1,300 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Models below implement docs/ARCHITECTURE.md.
+
+enum ExamStatus {
+  DRAFT
+  PREPARED
+  READY
+  CAPTURING
+  GRADING
+  REVIEW
+  PUBLISHED
+}
+
+enum QuestionType {
+  MCQ
+  DESCRIPTIVE
+  NUMERICAL
+  EQUATION
+  DIAGRAM
+  CODE
+}
+
+enum RubricStatus {
+  DRAFT
+  APPROVED
+}
+
+enum SheetStatus {
+  CAPTURING
+  READY
+  GRADING
+  GRADED
+  REVIEWED
+  FINALIZED
+}
+
+enum EvalStatus {
+  QUEUED
+  RUNNING
+  DONE
+  NEEDS_REVIEW
+  FAILED
+}
+
+enum Confidence {
+  HIGH
+  MED
+  LOW
+}
+
+model Exam {
+  id        String     @id @default(cuid())
+  title     String
+  subject   String
+  term      String?
+  status    ExamStatus @default(DRAFT)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  questions      Question[]
+  rubricVersions RubricVersion[]
+  students       Student[]
+  answerSheets   AnswerSheet[]
+  finalResults   FinalResult[]
+  apiUsage       ApiUsage[]
+}
+
+model Question {
+  id        String       @id @default(cuid())
+  examId    String
+  exam      Exam         @relation(fields: [examId], references: [id], onDelete: Cascade)
+  qNo       String // "1", "2a", "3(i)"
+  subPart   String?
+  text      String       @db.Text
+  maxMarks  Float
+  qType     QuestionType @default(DESCRIPTIVE)
+  topic     String?
+  sortOrder Int          @default(0)
+
+  criteria          RubricCriterion[]
+  baselineSolutions BaselineSolution[]
+  extractedAnswers  ExtractedAnswer[]
+  questionEvals     QuestionEvaluation[]
+
+  @@unique([examId, qNo])
+  @@index([examId])
+}
+
+model RubricVersion {
+  id         String       @id @default(cuid())
+  examId     String
+  exam       Exam         @relation(fields: [examId], references: [id], onDelete: Cascade)
+  version    Int
+  status     RubricStatus @default(DRAFT)
+  approvedAt DateTime?
+  approvedBy String?
+  createdAt  DateTime     @default(now())
+
+  criteria    RubricCriterion[]
+  baselines   BaselineSolution[]
+  evaluations Evaluation[]
+
+  @@unique([examId, version])
+}
+
+model RubricCriterion {
+  id              String        @id @default(cuid())
+  rubricVersionId String
+  rubricVersion   RubricVersion @relation(fields: [rubricVersionId], references: [id], onDelete: Cascade)
+  questionId      String
+  question        Question      @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  label           String
+  maxMarks        Float
+  descriptors     String        @db.Text // what earns full / partial / zero
+  sortOrder       Int           @default(0)
+
+  @@index([rubricVersionId, questionId])
+}
+
+model BaselineSolution {
+  id              String        @id @default(cuid())
+  rubricVersionId String
+  rubricVersion   RubricVersion @relation(fields: [rubricVersionId], references: [id], onDelete: Cascade)
+  questionId      String
+  question        Question      @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  solutionText    String        @db.Text
+  alternatives    String[] // acceptable alternative answers
+  facultyEdited   Boolean       @default(false)
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([rubricVersionId, questionId])
+}
+
+model Student {
+  id        String   @id @default(cuid())
+  examId    String
+  exam      Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  rollNo    String
+  name      String
+  createdAt DateTime @default(now())
+
+  answerSheets AnswerSheet[]
+  finalResults FinalResult[]
+
+  @@unique([examId, rollNo])
+  @@index([examId])
+}
+
+model AnswerSheet {
+  id        String      @id @default(cuid())
+  examId    String
+  exam      Exam        @relation(fields: [examId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status    SheetStatus @default(CAPTURING)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  pages            SheetPage[]
+  extractedAnswers ExtractedAnswer[]
+  evaluations      Evaluation[]
+
+  @@unique([examId, studentId])
+  @@index([examId])
+}
+
+model SheetPage {
+  id         String      @id @default(cuid())
+  sheetId    String
+  sheet      AnswerSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  pageNo     Int
+  imagePath  String // relative path under storage/
+  thumbPath  String?
+  qcFlags    String[] // blur | glare | skew | duplicate-suspected | unreadable
+  rotation   Int         @default(0)
+  capturedAt DateTime    @default(now())
+
+  @@unique([sheetId, pageNo])
+  @@index([sheetId])
+}
+
+model ExtractedAnswer {
+  id                  String      @id @default(cuid())
+  sheetId             String
+  sheet               AnswerSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  questionId          String
+  question            Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  pageIds             String[] // SheetPage ids, in reading order
+  regionRefs          String[] // e.g. "page3:12,40,88,70" normalized coords
+  interpretedText     String?     @db.Text
+  interpretationFlags String[] // unreadable | ambiguous | continued-across-pages | out-of-order
+
+  @@unique([sheetId, questionId])
+  @@index([sheetId])
+}
+
+model Evaluation {
+  id              String        @id @default(cuid())
+  sheetId         String
+  sheet           AnswerSheet   @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  rubricVersionId String
+  rubricVersion   RubricVersion @relation(fields: [rubricVersionId], references: [id])
+  status          EvalStatus    @default(QUEUED)
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  createdAt       DateTime      @default(now())
+
+  questionEvals QuestionEvaluation[]
+
+  @@index([sheetId])
+  @@index([status])
+}
+
+model QuestionEvaluation {
+  id              String     @id @default(cuid())
+  evaluationId    String
+  evaluation      Evaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  questionId      String
+  question        Question   @relation(fields: [questionId], references: [id])
+  aiMarks         Float
+  aiJustification String     @db.Text
+  criterionMarks  Json // [{criterionId, marks, note}]
+  evidenceRefs    String[] // page/region refs
+  confidence      Confidence @default(MED)
+  flags           String[] // unreadable | ambiguous | unsupported-conclusion | question-match-uncertain
+  model           String? // which model graded this
+  createdAt       DateTime   @default(now())
+
+  overrides EvaluationOverride[]
+
+  @@unique([evaluationId, questionId])
+  @@index([evaluationId])
+}
+
+model EvaluationOverride {
+  id             String             @id @default(cuid())
+  questionEvalId String
+  questionEval   QuestionEvaluation @relation(fields: [questionEvalId], references: [id], onDelete: Cascade)
+  facultyMarks   Float
+  comment        String?            @db.Text
+  createdAt      DateTime           @default(now())
+}
+
+model FinalResult {
+  id           String   @id @default(cuid())
+  examId       String
+  exam         Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  evaluationId String   @unique
+  totalAi      Float
+  totalFinal   Float
+  percentage   Float
+  finalizedAt  DateTime @default(now())
+  published    Boolean  @default(false)
+
+  @@unique([examId, studentId])
+  @@index([examId])
+}
+
+model ApiUsage {
+  id           String   @id @default(cuid())
+  examId       String?
+  exam         Exam?    @relation(fields: [examId], references: [id], onDelete: SetNull)
+  purpose      String // question-extract | scheme-parse | baseline | question-match | grade
+  model        String
+  promptTokens Int?
+  outputTokens Int?
+  status       String   @default("ok") // ok | retry | failed | quota
+  error        String?
+  createdAt    DateTime @default(now())
+
+  @@index([examId])
+  @@index([createdAt])
+}
+
+// Postgres-backed job queue. No Redis in MVP.
+// Workers claim jobs with SELECT ... FOR UPDATE SKIP LOCKED.
+model Job {
+  id          String   @id @default(cuid())
+  type        String // ingest-paper | scheme-parse | generate-baseline | question-match | grade-question
+  payload     Json
+  status      String   @default("queued") // queued | running | done | failed | retryable
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(3)
+  lastError   String?
+  runAfter    DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, runAfter])
+}
