@@ -16,6 +16,10 @@ export const config = {
   app: {
     url: str("APP_URL", "http://localhost:3000"),
   },
+  auth: {
+    // Single shared faculty token for the MVP. Empty = dev mode (open API).
+    facultyToken: str("FACULTY_TOKEN", ""),
+  },
   db: {
     url: str("DATABASE_URL", "postgresql://exam:exam@localhost:5432/exam_eval"),
   },
