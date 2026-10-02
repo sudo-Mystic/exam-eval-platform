@@ -35,7 +35,7 @@ async function ensureBudget(examId: string) {
 }
 
 // Strip markdown fences if the model adds them despite instructions.
-function parseJson(text: string): unknown {
+export function parseJson(text: string): unknown {
   const cleaned = text
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/i, "")
@@ -43,7 +43,7 @@ function parseJson(text: string): unknown {
   return JSON.parse(cleaned);
 }
 
-interface ExtractedQuestion {
+export interface ExtractedQuestion {
   qNo: string;
   subPart?: string | null;
   text: string;
@@ -54,7 +54,7 @@ interface ExtractedQuestion {
   flags?: string[];
 }
 
-function validateExtraction(raw: unknown): ExtractedQuestion[] {
+export function validateExtraction(raw: unknown): ExtractedQuestion[] {
   if (typeof raw !== "object" || raw === null) throw new Error("Extraction: not an object");
   const questions = (raw as { questions?: unknown }).questions;
   if (!Array.isArray(questions)) throw new Error("Extraction: questions is not an array");
@@ -236,14 +236,14 @@ export async function handleIngestPaper(payload: JobPayloadMap["ingest-paper"]) 
   void version;
 }
 
-interface SchemeCriterion {
+export interface SchemeCriterion {
   qNo: string;
   label: string;
   maxMarks: number;
   descriptors: string;
 }
 
-function validateScheme(raw: unknown, knownQNos: Set<string>): SchemeCriterion[] {
+export function validateScheme(raw: unknown, knownQNos: Set<string>): SchemeCriterion[] {
   if (typeof raw !== "object" || raw === null) throw new Error("Scheme: not an object");
   const criteria = (raw as { criteria?: unknown }).criteria;
   if (!Array.isArray(criteria)) throw new Error("Scheme: criteria is not an array");
@@ -342,13 +342,13 @@ export async function handleSchemeParse(payload: JobPayloadMap["scheme-parse"]) 
   void attached;
 }
 
-interface BaselineOutput {
+export interface BaselineOutput {
   solutionText: string;
   alternatives: string[];
   criterionNotes: Array<{ label: string; note: string }>;
 }
 
-function validateBaseline(raw: unknown): BaselineOutput {
+export function validateBaseline(raw: unknown): BaselineOutput {
   if (typeof raw !== "object" || raw === null) throw new Error("Baseline: not an object");
   const o = raw as Record<string, unknown>;
   if (typeof o.solutionText !== "string" || o.solutionText.trim().length === 0)
