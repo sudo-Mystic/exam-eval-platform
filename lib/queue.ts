@@ -14,13 +14,25 @@ export type JobType =
   | "question-match"
   | "grade-question";
 
-export interface JobPayload {
-  [key: string]: unknown;
+// Typed payloads. Every job carries examId so queueStatus() counts are complete.
+export interface JobPayloadMap {
+  "ingest-paper": { examId: string; files: string[] };
+  "scheme-parse": { examId: string; files: string[] };
+  "generate-baseline": { examId: string; rubricVersionId: string; questionIds?: string[] };
+  "question-match": { examId: string; sheetId: string; evaluationId: string };
+  "grade-question": {
+    examId: string;
+    sheetId: string;
+    evaluationId: string;
+    questionId: string;
+  };
 }
 
-export async function enqueue(
-  type: JobType,
-  payload: JobPayload,
+export type JobPayload = JobPayloadMap[JobType];
+
+export async function enqueue<T extends JobType>(
+  type: T,
+  payload: JobPayloadMap[T],
   opts?: { runAfter?: Date; maxAttempts?: number }
 ) {
   return db.job.create({
@@ -35,7 +47,7 @@ export async function enqueue(
 
 export interface ClaimedJob {
   id: string;
-  type: string;
+  type: JobType;
   payload: JobPayload;
   attempts: number;
   maxAttempts: number;
@@ -57,7 +69,12 @@ export async function claimNext(): Promise<ClaimedJob | null> {
     RETURNING id, type, payload, attempts, "maxAttempts"
   `;
   if (rows.length === 0) return null;
-  return { ...rows[0], payload: rows[0].payload as JobPayload };
+  const row = rows[0];
+  return {
+    ...row,
+    type: row.type as JobType,
+    payload: row.payload as JobPayload,
+  };
 }
 
 export async function completeJob(id: string) {

@@ -71,6 +71,19 @@ model Exam {
   answerSheets   AnswerSheet[]
   finalResults   FinalResult[]
   apiUsage       ApiUsage[]
+  paperUploads   PaperUpload[]
+}
+
+// Record of each paper upload. Survives the transient job payload so the
+// re-upload UI and orphan-file cleanup have something to key on.
+model PaperUpload {
+  id        String   @id @default(cuid())
+  examId    String
+  exam      Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  files     String[]
+  createdAt DateTime @default(now())
+
+  @@index([examId])
 }
 
 model Question {
@@ -238,6 +251,7 @@ model QuestionEvaluation {
 
   @@unique([evaluationId, questionId])
   @@index([evaluationId])
+  @@index([questionId])
 }
 
 model EvaluationOverride {

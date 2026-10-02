@@ -117,6 +117,9 @@ export async function POST(
     await db.$transaction(async (tx) => {
       await tx.question.deleteMany({ where: { examId } });
       await tx.rubricVersion.deleteMany({ where: { examId, status: "DRAFT" } });
+      await tx.paperUpload.create({
+        data: { examId, files: saved },
+      });
       await tx.job.create({
         data: {
           type: "ingest-paper",
