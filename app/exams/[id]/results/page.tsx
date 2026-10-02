@@ -191,12 +191,20 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
                 </td>
                 <td className="px-4 py-2 text-right">
                   {r.result && (
-                    <Link
-                      href={`/evaluations/${r.result.evaluationId}`}
-                      className="text-xs text-accent hover:underline"
-                    >
-                      Review
-                    </Link>
+                    <>
+                      <Link
+                        href={`/exams/${examId}/reports/${r.studentId}`}
+                        className="mr-3 text-xs text-accent hover:underline"
+                      >
+                        Report
+                      </Link>
+                      <Link
+                        href={`/evaluations/${r.result.evaluationId}`}
+                        className="text-xs text-accent hover:underline"
+                      >
+                        Review
+                      </Link>
+                    </>
                   )}
                 </td>
               </tr>
