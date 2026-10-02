@@ -178,6 +178,12 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
           >
             Baseline &amp; approval
           </Link>
+          <Link
+            href={`/exams/${exam.id}/capture`}
+            className="rounded-[var(--radius-sm)] border border-border px-4 py-2 text-sm font-medium hover:bg-surface-muted"
+          >
+            Capture sheets
+          </Link>
         </div>
       </section>
     </main>

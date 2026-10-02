@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import { createHash } from "crypto";
-import { config } from "./config";
+import { config } from "../config";
 
 // Image quality checks for the capture workspace.
 // Never silently discards: returns flags the faculty sees and decides on.
