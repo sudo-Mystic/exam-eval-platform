@@ -13,6 +13,7 @@ export interface ModelProvider {
     user: string;
     images?: Array<{ mimeType: string; data: Buffer }>;
     maxOutputTokens?: number;
+    temperature?: number;
   }): Promise<{ text: string; promptTokens?: number; outputTokens?: number }>;
 }
 
