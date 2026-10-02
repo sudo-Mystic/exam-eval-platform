@@ -1,17 +1,23 @@
 # dependencies
 node_modules/
-.next/
-out/
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+/build
 
 # prisma
 prisma/migrations/
 
-# env
+# env (example is committed, real env files are not)
 .env
 .env.local
 .env.*.local
+!.env.example
 
-# storage (local disk for answer sheet images)
+# storage - local disk for answer sheet images (free)
 storage/uploads/
 storage/thumbs/
 
@@ -21,3 +27,17 @@ Thumbs.db
 
 # logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# vercel
+.vercel
+
+# misc
+*.pem
+/coverage
