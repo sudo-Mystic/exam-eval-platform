@@ -51,22 +51,24 @@ export default async function Dashboard() {
         ) : (
           <ul className="overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface">
             {(exams as ExamWithCounts[]).map((exam) => (
-              <li
-                key={exam.id}
-                className="flex items-center justify-between gap-4 border-b border-border px-5 py-4 last:border-0"
-              >
-                <div>
-                  <p className="text-sm font-medium">{exam.title}</p>
-                  <p className="mt-0.5 text-xs text-foreground/60">
-                    {exam.subject}
-                    {exam.term ? ` · ${exam.term}` : ""} ·{" "}
-                    {exam._count.questions} questions ·{" "}
-                    {exam._count.answerSheets} sheets
-                  </p>
-                </div>
-                <span className="rounded-full bg-accent-soft px-2.5 py-1 text-xs font-medium text-accent">
-                  {STATUS_LABEL[exam.status] ?? exam.status}
-                </span>
+              <li key={exam.id} className="border-b border-border last:border-0">
+                <a
+                  href={`/exams/${exam.id}`}
+                  className="flex items-center justify-between gap-4 px-5 py-4 hover:bg-surface-muted"
+                >
+                  <div>
+                    <p className="text-sm font-medium">{exam.title}</p>
+                    <p className="mt-0.5 text-xs text-foreground/60">
+                      {exam.subject}
+                      {exam.term ? ` · ${exam.term}` : ""} ·{" "}
+                      {exam._count.questions} questions ·{" "}
+                      {exam._count.answerSheets} sheets
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-accent-soft px-2.5 py-1 text-xs font-medium text-accent">
+                    {STATUS_LABEL[exam.status] ?? exam.status}
+                  </span>
+                </a>
               </li>
             ))}
           </ul>
